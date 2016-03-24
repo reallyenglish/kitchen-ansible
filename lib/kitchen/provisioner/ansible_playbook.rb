@@ -89,6 +89,8 @@ module Kitchen
                 fi
               elif [ -f /etc/SuSE-release ] || [ -f /etc/SUSE-brand ]; then
                 #{Kitchen::Provisioner::Ansible::Os::Suse.new('suse', config).install_command}
+              elif uname -s | grep FreeBSD; then
+                #{Kitchen::Provisioner::Ansible::Os::Freebsd.new('freebsd', config).install_command}
               else
                 #{Kitchen::Provisioner::Ansible::Os::Debian.new('debian', config).install_command}
               fi
@@ -171,6 +173,8 @@ module Kitchen
                 #{update_packages_suse_cmd}
                 #{sudo_env('zypper')} --non-interactive install ruby ruby-devel ca-certificates ca-certificates-cacert ca-certificates-mozilla
                 #{sudo_env('gem')} sources --add https://rubygems.org/
+            elif uname -s | grep FreeBSD; then
+                ASSUME_ALWAYS_YES=yes #{sudo_env('pkg')} install ruby
             else
               if [ ! $(which ruby) ]; then
                 #{update_packages_debian_cmd}
@@ -261,7 +265,7 @@ module Kitchen
 
         # Prevent failure when ansible package installation doesn't contain /etc/ansible
         commands << [
-          sudo_env("bash -c '[ -d /etc/ansible ] || mkdir /etc/ansible'")
+          sudo_env("sh -c '[ -d /etc/ansible ] || mkdir /etc/ansible'")
         ]
 
         commands << [

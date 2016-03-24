@@ -22,6 +22,7 @@ require 'kitchen/provisioner/ansible/os/debian'
 require 'kitchen/provisioner/ansible/os/redhat'
 require 'kitchen/provisioner/ansible/os/amazon'
 require 'kitchen/provisioner/ansible/os/suse'
+require 'kitchen/provisioner/ansible/os/freebsd'
 
 module Kitchen
   module Provisioner
@@ -46,6 +47,8 @@ module Kitchen
             return Amazon.new(platform, config)
           when 'suse', 'opensuse', 'sles'
             return Suse.new(platform, config)
+          when 'freebsd'
+            return Freebsd.new(platform, config)
           end
 
           nil
