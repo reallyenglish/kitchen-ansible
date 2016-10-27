@@ -180,7 +180,9 @@ module Kitchen
                 #{sudo_env('zypper')} --non-interactive install ruby ruby-devel ca-certificates ca-certificates-cacert ca-certificates-mozilla
                 #{sudo_env('gem')} sources --add https://rubygems.org/
             elif uname -s | grep FreeBSD; then
+              if [ ! $(which ruby) ]; then
                 ASSUME_ALWAYS_YES=yes #{sudo_env('pkg')} install ruby
+              fi
             else
               if [ ! $(which ruby) ]; then
                 #{update_packages_debian_cmd}
