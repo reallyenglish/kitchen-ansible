@@ -16,7 +16,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-require 'spec_helper'
+require 'kitchen'
+require 'kitchen/provisioner/ansible/config'
 
 # Work around for lazy loading
 describe Kitchen::Provisioner::Ansible::Config do
@@ -46,8 +47,7 @@ describe Kitchen::Provisioner::Ansible::Config do
       [:update_package_repos, true],
       [:http_proxy, nil],
       [:https_proxy, nil],
-      [:no_proxy, nil],
-      [:ignore_paths_from_root, []]
+      [:no_proxy, nil]
     ].each do |item|
       it "should contain the correct default value for '#{item[0]}'" do
         c = Kitchen::Provisioner::Ansible::Config.new({})
@@ -79,8 +79,7 @@ describe Kitchen::Provisioner::Ansible::Config do
       [:ansible_diff, true],
       [:ansible_platform, 'banana'],
       [:ansible_connection, 'ssh'],
-      [:update_package_repos, false],
-      [:ignore_paths_from_root, ['.git']]
+      [:update_package_repos, false]
     ].each do |item|
       it "should contain the correct set value for '#{item[0]}'" do
         c = Kitchen::Provisioner::Ansible::Config.new(item[0] => item[1])

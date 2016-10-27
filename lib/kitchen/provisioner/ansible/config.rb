@@ -39,20 +39,17 @@ module Kitchen
         default_config :require_ansible_repo, true
         default_config :enable_yum_epel, false
         default_config :extra_vars, {}
-        default_config :env_vars, {}
         default_config :tags, []
         default_config :ansible_apt_repo, 'ppa:ansible/ansible'
         default_config :ansible_yum_repo, nil
         default_config :ansible_sles_repo, 'http://download.opensuse.org/repositories/systemsmanagement/SLE_12/systemsmanagement.repo'
         default_config :python_sles_repo, 'http://download.opensuse.org/repositories/devel:/languages:/python/SLE_12/devel:languages:python.repo'
         default_config :chef_bootstrap_url, 'https://www.getchef.com/chef/install.sh'
-        # Providing we have Ruby >= 2.0 we only need Ruby. Leaving default to install Chef Omnibus for backwards compatibility.
-        # Note: if using kitchen-verifer-serverspec your we can avoid needing Ruby too.
+        # Until we can truly make busser work without /opt/chef/embedded/bin/gem being installed, we still need Chef Omnibus
         # (Reference: https://github.com/neillturner/kitchen-ansible/issues/66 )
         default_config :require_chef_for_busser, true
         default_config :require_ruby_for_busser, false
         default_config :require_windows_support, false
-        default_config :require_pip, false
         default_config :requirements_path, false
         default_config :ssh_known_hosts, nil
         default_config :ansible_verbose, false
@@ -73,13 +70,10 @@ module Kitchen
         default_config :ansible_inventory, nil
         default_config :ansible_inventory_file, nil
         default_config :ansible_limit, nil
-        default_config :ignore_paths_from_root, []
-        default_config :role_name, nil
-        default_config :additional_copy_role_path, false
 
         default_config :playbook do |provisioner|
           provisioner.calculate_path('default.yml', :file) ||
-            fail('No playbook found or specified!  Please either set a playbook in your .kitchen.yml config, or create a default playbook in test/integration/<suite_name>/ansible/default.yml, test/integration/<suite_name>/default.yml, test/integration/default.yml or in default.yml in the top level')
+            fail('No playbook found or specified!  Please either set a playbook in your .kitchen.yml config, or create a default wrapper playbook for your role in test/integration/playbooks/default.yml or test/integration/default.yml')
         end
 
         default_config :roles_path do |provisioner|
@@ -93,10 +87,6 @@ module Kitchen
 
         default_config :additional_copy_path do |provisioner|
           provisioner.calculate_path('additional_copy', :directory)
-        end
-
-        default_config :recursive_additional_copy_path do |provisioner|
-          provisioner.calculate_path('recursive_additional_copy', :directory)
         end
 
         default_config :host_vars_path do |provisioner|

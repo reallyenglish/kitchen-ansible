@@ -21,7 +21,6 @@
 #
 
 require 'json'
-require 'find'
 require 'kitchen/provisioner/base'
 require 'kitchen/provisioner/ansible/config'
 require 'kitchen/provisioner/ansible/os'
@@ -73,9 +72,6 @@ module Kitchen
         elsif config[:require_ansible_source]
           info('Installing ansible from source')
           cmd = install_ansible_from_source_command
-        elsif config[:require_pip]
-          info('Installing ansible through pip')
-          cmd = install_ansible_from_pip_command
         elsif config[:require_ansible_repo]
           if !@os.nil?
             info("Installing ansible on #{@os.name}")
@@ -85,10 +81,8 @@ module Kitchen
             cmd = <<-INSTALL
 
             if [ ! $(which ansible) ]; then
-              if [ -f /etc/fedora-release ]; then
-                #{Kitchen::Provisioner::Ansible::Os::Fedora.new('fedora', config).install_command}
-              elif [ -f /etc/centos-release ] || [ -f /etc/redhat-release ]; then
-                if [ -z `grep -q 'Amazon Linux' /etc/system-release` ]; then
+              if [ -f /etc/centos-release ] || [ -f /etc/redhat-release ]; then
+                if ! [ grep -q 'Amazon Linux' /etc/system-release ]; then
                 #{Kitchen::Provisioner::Ansible::Os::Redhat.new('redhat', config).install_command}
                 else
                 #{Kitchen::Provisioner::Ansible::Os::Amazon.new('amazon', config).install_command}
@@ -107,7 +101,7 @@ module Kitchen
           return
         end
         result = cmd + install_windows_support + install_busser_prereqs
-        debug("Going to install ansible with: #{result}")
+        info("Going to install ansible with: #{result}")
         result
       end
 
@@ -122,7 +116,7 @@ module Kitchen
               #{sudo_env('zypper')} ar #{python_sles_repo}
               #{sudo_env('zypper')} --non-interactive install python python-devel krb5-client pam_krb5
             else
-              #{sudo_env('apt-get')} -y install python-dev libkrb5-dev build-essential
+              #{sudo_env('apt-get')} install python-dev libkrb5-dev build-essential
             fi
           fi
           #{export_http_proxy}
@@ -148,7 +142,7 @@ module Kitchen
         if require_ruby_for_busser
           install << <<-INSTALL
             if [ -f /etc/centos-release ] || [ -f /etc/redhat-release ]; then
-            if [ -z `grep -q 'Amazon Linux' /etc/system-release` ]; then
+            if ! [ grep -q 'Amazon Linux' /etc/system-release ]; then
             rhelversion6=$(cat /etc/redhat-release | grep 'release 6')
             rhelversion7=$(cat /etc/redhat-release | grep 'release 7')
             # For CentOS6/CentOS7/RHEL6/RHEL7 install ruby from SCL
@@ -194,13 +188,6 @@ module Kitchen
                     # this is jessie or better, where ruby1.9.1 is
                     # no longer in the repositories
                     PACKAGES="ruby ruby-dev ruby2.1 ruby2.1-dev"
-                  fi
-                fi
-                if [ "$(lsb_release -si)" = "Ubuntu" ]; then
-                  ubuntuvers=$(lsb_release -sr | tr -d .)
-                  if [ $ubuntuvers -ge 1410 ]; then
-                    # Default ruby is 2.x in utopic and newer
-                    PACKAGES="ruby ruby-dev"
                   fi
                 fi
                 #{sudo_env('apt-get')} -y install $PACKAGES
@@ -327,7 +314,11 @@ module Kitchen
           if config[:require_ansible_source]
             commands << setup_ansible_env_from_source
           end
-          commands << ansible_galaxy_command
+          commands << [
+            'ansible-galaxy', 'install', '--force',
+            '-p', File.join(config[:root_path], 'roles'),
+            '-r', File.join(config[:root_path], galaxy_requirements)
+          ].join(' ')
         end
 
         if kerberos_conf_file
@@ -346,16 +337,16 @@ module Kitchen
           return config[:ansible_playbook_command]
         else
 
-          if config[:require_ansible_source] && !config[:ansible_binary_path]
+          cmd = ansible_command('ansible-playbook')
+          if config[:require_ansible_source]
             # this is an ugly hack to get around the fact that extra vars uses ' and "
-            cmd = ansible_command("PATH=#{config[:root_path]}/ansible/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games PYTHONPATH=#{config[:root_path]}/ansible/lib MANPATH=#{config[:root_path]}/ansible/docs/man ansible-playbook")
-          elsif config[:ansible_binary_path]
-            cmd = ansible_command("#{config[:ansible_binary_path]}/ansible-playbook")
-          else
-            cmd = ansible_command('ansible-playbook')
+            cmd = ansible_command("PATH=#{config[:root_path]}/ansible/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games PYTHONPATH=#{config[:root_path]}/ansible/lib MANPATH=#{config[:root_path]}/ansible/docs/man #{config[:root_path]}/ansible/bin/ansible-playbook")
           end
 
-          cmd = "#{env_vars} #{cmd}" if !config[:env_vars].none?
+          if config[:ansible_binary_path]
+            cmd = ansible_command("#{config[:ansible_binary_path]}/ansible-playbook")
+          end
+
           cmd = "HTTPS_PROXY=#{https_proxy} #{cmd}" if https_proxy
           cmd = "HTTP_PROXY=#{http_proxy} #{cmd}" if http_proxy
           cmd = "NO_PROXY=#{no_proxy} #{cmd}" if no_proxy
@@ -369,7 +360,7 @@ module Kitchen
             cmd,
             ansible_inventory_flag,
             ansible_limit_flag,
-            ansible_connection_flag,
+            "-c #{config[:ansible_connection]}",
             "-M #{File.join(config[:root_path], 'modules')}",
             ansible_verbose_flag,
             ansible_check_flag,
@@ -381,7 +372,7 @@ module Kitchen
             ansible_extra_flags,
             "#{File.join(config[:root_path], File.basename(config[:playbook]))}"
           ].join(' ')
-          debug("Going to invoke ansible-playbook with: #{result}")
+          info("Going to invoke ansible-playbook with: #{result}")
           if config[:idempotency_test]
             result = "#{result} && (echo 'Going to invoke ansible-playbook second time:'; #{result} | tee /tmp/idempotency_test.txt; grep -q 'changed=0.*failed=0' /tmp/idempotency_test.txt && (echo 'Idempotence test: PASS' && exit 0) || (echo 'Idempotence test: FAIL' && exit 1))"
             debug("Full cmd with idempotency test: #{result}")
@@ -396,22 +387,10 @@ module Kitchen
           s = https_proxy ? "https_proxy=#{https_proxy}" : nil
           p = http_proxy ? "http_proxy=#{http_proxy}" : nil
           n = no_proxy ? "no_proxy=#{no_proxy}" : nil
-          p || s || n ? " #{p} #{s} #{n} #{config[:sudo_command]} -s #{cd_ansible} #{script}" : "#{config[:sudo_command]} -s #{cd_ansible} #{script}"
+          p || s || n ? " #{p} #{s} #{n} sudo -Es #{cd_ansible} #{script}" : "sudo -Es #{cd_ansible} #{script}"
         else
           return script
         end
-      end
-
-      def ansible_galaxy_command
-        cmd = [
-            'ansible-galaxy', 'install', '--force',
-            '-p', File.join(config[:root_path], 'roles'),
-            '-r', File.join(config[:root_path], galaxy_requirements)
-        ].join(' ')
-        cmd = "https_proxy=#{https_proxy} #{cmd}" if https_proxy
-        cmd = "http_proxy=#{http_proxy} #{cmd}" if http_proxy
-        cmd = "no_proxy=#{no_proxy} #{cmd}" if no_proxy
-        cmd
       end
 
       def cd_ansible
@@ -435,52 +414,22 @@ module Kitchen
           if [ -f /etc/centos-release ] || [ -f /etc/redhat-release ]; then
             #{Kitchen::Provisioner::Ansible::Os::Redhat.new('redhat', config).install_epel_repo}
             #{update_packages_redhat_cmd}
-            #{sudo_env('yum')} -y install libselinux-python python2-devel git python-setuptools python-setuptools-dev libffi-devel libssl-devel
+            #{sudo_env('yum')} -y install libselinux-python python2-devel git python-setuptools python-setuptools-dev
           else
             if [ -f /etc/SUSE-brand ] || [ -f /etc/SuSE-release ]; then
               #{sudo_env('zypper')} ar #{python_sles_repo}
               #{update_packages_suse_cmd}
-              #{sudo_env('zypper')} --non-interactive install python python-devel git python-setuptools python-pip python-six libyaml-devel libffi-devel libopenssl-devel
+              #{sudo_env('zypper')} --non-interactive install python python-devel git python-setuptools python-pip python-six libyaml-devel
             else
               #{update_packages_debian_cmd}
-              #{sudo_env('apt-get')} -y install git python python-setuptools build-essential python-dev libffi-dev libssl-dev
+              #{sudo_env('apt-get')} -y install git python python-setuptools build-essential python-dev
             fi
           fi
 
           #{export_http_proxy}
           git clone git://github.com/ansible/ansible.git --recursive #{config[:root_path]}/ansible #{install_source_rev}
           #{sudo_env('easy_install')} pip
-          #{sudo_env('pip')} install -U setuptools
           #{sudo_env('pip')} install six paramiko PyYAML Jinja2 httplib2
-        fi
-        INSTALL
-      end
-
-      def install_ansible_from_pip_command
-        ansible_version = ''
-        ansible_version = "==#{config[:ansible_version]}" unless config[:ansible_version] == 'latest'
-
-        <<-INSTALL
-        if [ ! -d #{config[:root_path]}/ansible ]; then
-          if [ -f /etc/centos-release ] || [ -f /etc/redhat-release ]; then
-            #{Kitchen::Provisioner::Ansible::Os::Redhat.new('redhat', config).install_epel_repo}
-            #{update_packages_redhat_cmd}
-            #{sudo_env('yum')} -y install libselinux-python python2-devel git python-setuptools python-setuptools-dev libffi-devel openssl-devel gcc
-          else
-            if [ -f /etc/SUSE-brand ] || [ -f /etc/SuSE-release ]; then
-              #{sudo_env('zypper')} ar #{python_sles_repo}
-              #{update_packages_suse_cmd}
-              #{sudo_env('zypper')} --non-interactive install python python-devel git python-setuptools python-pip python-six libyaml-devel libffi-devel libopenssl-devel
-            else
-              #{update_packages_debian_cmd}
-              #{sudo_env('apt-get')} -y install git python python-setuptools build-essential python-dev libffi-dev libssl-dev
-            fi
-          fi
-
-          #{export_http_proxy}
-          #{sudo_env('easy_install')} pip
-          #{sudo_env('pip')} install -U setuptools
-          #{sudo_env('pip')} install ansible#{ansible_version}
         fi
         INSTALL
       end
@@ -563,11 +512,6 @@ module Kitchen
         config[:requirements_path] || nil
       end
 
-      def env_vars
-        return nil if config[:env_vars].none?
-        config[:env_vars].map { |k, v| "#{k}=#{v}" }.join(' ')
-      end
-
       def playbook
         config[:playbook]
       end
@@ -581,13 +525,7 @@ module Kitchen
       end
 
       def role_name
-        if config[:role_name]
-          config[:role_name]
-        elsif File.basename(roles) == 'roles'
-          ''
-        else
-          File.basename(roles)
-        end
+        File.basename(roles) == 'roles' ? '' : File.basename(roles)
       end
 
       def modules
@@ -604,10 +542,6 @@ module Kitchen
 
       def additional_copy
         config[:additional_copy_path]
-      end
-
-      def recursive_additional_copy
-        config[:recursive_additional_copy_path]
       end
 
       def host_vars
@@ -635,22 +569,13 @@ module Kitchen
       end
 
       def ansible_inventory
-        return nil if config[:ansible_inventory] == 'none'
         config[:ansible_inventory] = config[:ansible_inventory_file] if config[:ansible_inventory].nil?
         info('ansible_inventory_file parameter deprecated use ansible_inventory') if config[:ansible_inventory_file]
         config[:ansible_inventory]
       end
 
       def ansible_debian_version
-        if @config[:ansible_version] == 'latest' || @config[:ansible_version] == nil
-          ''
-        else
-          "=#{@config[:ansible_version]}"
-        end
-      end
-
-      def ansible_connection_flag
-        "-c #{config[:ansible_connection]}" if config[:ansible_connection] != 'none'
+        config[:ansible_version] ? "=#{config[:ansible_version]}" : nil
       end
 
       def ansible_verbose_flag
@@ -671,8 +596,7 @@ module Kitchen
       end
 
       def ansible_inventory_flag
-        return nil if config[:ansible_inventory] == 'none'
-        ansible_inventory ? "-i #{File.join(config[:root_path], File.basename(ansible_inventory))}" : "-i #{File.join(config[:root_path], 'hosts')}"
+        config[:ansible_inventory] ? "-i #{File.join(config[:root_path], File.basename(config[:ansible_inventory]))}" : "-i #{File.join(config[:root_path], 'hosts')}"
       end
 
       def ansible_limit_flag
@@ -788,15 +712,11 @@ module Kitchen
         config[:no_proxy]
       end
 
-      def sudo_env(pm,home=false)
+      def sudo_env(pm)
         s = https_proxy ? "https_proxy=#{https_proxy}" : nil
         p = http_proxy ? "http_proxy=#{http_proxy}" : nil
         n = no_proxy ? "no_proxy=#{no_proxy}" : nil
-        if home
-          p || s || n ? "#{sudo_home('env')} #{p} #{s} #{n} #{pm}" : "#{sudo_home(pm)}"
-        else
-          p || s || n ? "#{sudo('env')} #{p} #{s} #{n} #{pm}" : "#{sudo(pm)}"
-        end
+        p || s || n ? "#{sudo('env')} #{p} #{s} #{n} #{pm}" : "#{sudo(pm)}"
       end
 
       def export_http_proxy
@@ -811,10 +731,8 @@ module Kitchen
       def ansible_roles_path
         roles_paths = []
         roles_paths << File.join(config[:root_path], 'roles') unless config[:roles_path].nil?
-        if config[:additional_copy_role_path]
-          additional_files.each do |additional_file|
-            roles_paths << File.join(config[:root_path], File.basename(additional_file))
-          end
+        additional_files.each do |additional_file|
+          roles_paths << File.join(config[:root_path], File.basename(additional_file))
         end
         if roles_paths.empty?
           info('No roles have been set.')
@@ -832,29 +750,14 @@ module Kitchen
         resolve_with_librarian if File.exist?(ansiblefile)
 
         if galaxy_requirements
-          dest = File.join(sandbox_path, galaxy_requirements)
-          FileUtils.mkdir_p(File.dirname(dest))
-          FileUtils.cp(galaxy_requirements, dest)
+          FileUtils.cp(galaxy_requirements, File.join(sandbox_path, galaxy_requirements))
         end
+
+        # Detect whether we are running tests on a role
+        # If so, make sure to copy into VM so dir structure is like: /tmp/kitchen/roles/role_name
 
         FileUtils.mkdir_p(File.join(tmp_roles_dir, role_name))
-        Find.find(roles) do |source|
-          # Detect whether we are running tests on a role
-          # If so, make sure to copy into VM so dir structure is like: /tmp/kitchen/roles/role_name
-          role_path = source.sub(/#{roles}|\/roles/, '')
-          unless roles =~ /\/roles$/
-            role_path = "#{role_name}/#{role_path}"
-          end
-
-          target = File.join(tmp_roles_dir, role_path)
-
-          Find.prune if config[:ignore_paths_from_root].include? File.basename(source)
-          if File.directory?(source)
-            FileUtils.mkdir_p(target)
-          else
-            FileUtils.cp(source, target)
-          end
-        end
+        FileUtils.cp_r(Dir.glob("#{roles}/*"), File.join(tmp_roles_dir, role_name))
       end
 
       # copy ansible.cfg if found in root of repo
@@ -924,26 +827,13 @@ module Kitchen
       def prepare_additional_copy_path
         info('Preparing additional_copy_path')
         additional_files.each do |file|
-           destination = File.join(sandbox_path, File.basename(file))
-           if File.directory?(file)
-             info("Copy dir: #{file} #{destination}")
-             Find.prune if config[:ignore_paths_from_root].include? File.basename(file)
-             FileUtils.mkdir_p(destination)
-           else
-             info("Copy file: #{file} #{destination}")
-             FileUtils.cp(file, destination)
-           end
-        end
-        recursive_additional_files.each do |file|
-          info("Copy recursive additional path: #{file}")
-          Find.find(file) do |files|
-            destination = File.join(sandbox_path, files)
-            Find.prune if config[:ignore_paths_from_root].include? File.basename(files)
-            if File.directory?(files)
-              FileUtils.mkdir_p(destination)
-            else
-              FileUtils.cp(files, destination)
-            end
+          destination = File.join(sandbox_path, File.basename(file))
+          if File.directory?(file)
+            info("Copy dir: #{file} #{destination}")
+            FileUtils.cp_r(file, destination)
+          else
+            info("Copy file: #{file} #{destination}")
+            FileUtils.cp file, destination
           end
         end
       end
@@ -954,14 +844,6 @@ module Kitchen
           additional_files = additional_copy.is_a?(Array) ? additional_copy : [additional_copy]
         end
         additional_files.map(&:to_s)
-      end
-
-      def recursive_additional_files
-        recursive_additional_files = []
-        if  recursive_additional_copy
-          recursive_additional_files = recursive_additional_copy.is_a?(Array) ? recursive_additional_copy : [recursive_additional_copy]
-        end
-        recursive_additional_files.map(&:to_s)
       end
 
       def prepare_host_vars

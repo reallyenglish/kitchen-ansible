@@ -27,11 +27,7 @@ module Kitchen
           end
 
           def ansible_debian_version
-            if @config[:ansible_version] == 'latest' || @config[:ansible_version] == nil
-              ''
-            else
-              "=#{@config[:ansible_version]}"
-            end
+            @config[:ansible_version] ? "=#{@config[:ansible_version]}" : nil
           end
 
           def install_command

@@ -16,7 +16,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-require 'spec_helper'
+require_relative '../../spec_helper'
+require 'kitchen'
 
 # Work around for lazy loading
 require 'kitchen/provisioner/ansible_playbook'
@@ -68,7 +69,7 @@ describe Kitchen::Provisioner::AnsiblePlaybook do
 
   describe '#prepare_ansible_vault_password_file' do
     it 'copies the password file to the sandbox when present' do
-      allow(provisioner).to receive(:sandbox_path).and_return(Dir.mktmpdir)
+      allow(provisioner).to receive(:sandbox_path).and_return(Dir.tmpdir)
       provisioner.send(:prepare_ansible_vault_password_file)
     end
 
@@ -77,7 +78,7 @@ describe Kitchen::Provisioner::AnsiblePlaybook do
         config.tap { |config| config.delete(:ansible_vault_password_file) }
       ).finalize_config!(instance)
 
-      allow(provision_without_vault_configured).to receive(:sandbox_path).and_return(Dir.mktmpdir)
+      allow(provision_without_vault_configured).to receive(:sandbox_path).and_return(Dir.tmpdir)
 
       expect { provision_without_vault_configured.send(:prepare_ansible_vault_password_file) }.not_to raise_error
     end
@@ -85,7 +86,7 @@ describe Kitchen::Provisioner::AnsiblePlaybook do
 
   describe '#prepare_inventory' do
     it 'copies the inventory file to the sandbox when present' do
-      allow(provisioner).to receive(:sandbox_path).and_return(Dir.mktmpdir)
+      allow(provisioner).to receive(:sandbox_path).and_return(Dir.tmpdir)
       provisioner.send(:prepare_inventory)
     end
   end
@@ -138,62 +139,6 @@ describe Kitchen::Provisioner::AnsiblePlaybook do
       custom_config.each do |k, v|
         expect(provisioner.send(:diagnose)[k]).to eq v
       end
-    end
-  end
-
-  describe '#role_name' do
-    it 'should be empty if the roles_path ends with "roles"' do
-      config[:roles_path] = '/some/path/to/roles'
-      expect(provisioner.send(:role_name)).to eq ''
-    end
-    it 'should be the basename of the roles_path does not end with "roles"' do
-      config[:roles_path] = '/some/path'
-      expect(provisioner.send(:role_name)).to eq 'path'
-    end
-    it 'should be the value from configuration if defined' do
-      config[:role_name] = 'my-role'
-      expect(provisioner.send(:role_name)).to eq 'my-role'
-    end
-  end
-
-  describe '#prepare_roles' do
-    it 'should correct cp when requirements_path not include path' do
-      config[:requirements_path] = '.gitignore'
-
-      sandbox_path = Dir.mktmpdir
-      allow(provisioner).to receive(:sandbox_path).and_return(sandbox_path)
-
-      expect { provisioner.send(:prepare_roles) }.to_not raise_error
-      expect(File.exists?(File.join(sandbox_path, config[:requirements_path]))).to eq(true)
-    end
-
-    it 'should correct cp when requirements_path include path' do
-      config[:requirements_path] = 'spec/data/requirements.yml'
-
-      sandbox_path = Dir.mktmpdir
-      allow(provisioner).to receive(:sandbox_path).and_return(sandbox_path)
-
-      expect { provisioner.send(:prepare_roles) }.to_not raise_error
-      expect(File.exists?(File.join(sandbox_path, config[:requirements_path]))).to eq(true)
-    end
-
-    it 'should ignore .git directories when ignore_paths_from_root is set' do
-      config[:ignore_paths_from_root] = ['.git']
-
-      sandbox_path = Dir.mktmpdir
-      allow(provisioner).to receive(:sandbox_path).and_return(sandbox_path)
-
-      expect { provisioner.send(:prepare_roles) }.to_not raise_error
-    end
-
-    it 'should correct cp when role_name is set' do
-      config[:role_name] = 'my-role'
-
-      sandbox_path = Dir.mktmpdir
-      allow(provisioner).to receive(:sandbox_path).and_return(sandbox_path)
-
-      expect { provisioner.send(:prepare_roles) }.to_not raise_error
-      expect(Dir.entries(File.join(sandbox_path, 'roles', config[:role_name])).size).to be > 2
     end
   end
 end
