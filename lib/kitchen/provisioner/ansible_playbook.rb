@@ -181,7 +181,7 @@ module Kitchen
                 #{sudo_env('gem')} sources --add https://rubygems.org/
             elif uname -s | grep FreeBSD; then
               if [ ! $(which ruby) ]; then
-                ASSUME_ALWAYS_YES=yes #{sudo_env('pkg')} install ruby
+                ASSUME_ALWAYS_YES=yes #{sudo_env('pkg')} install ruby ruby-gems
               fi
             else
               if [ ! $(which ruby) ]; then
