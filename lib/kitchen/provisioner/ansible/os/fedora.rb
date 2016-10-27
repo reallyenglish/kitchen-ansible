@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 #
 # Author:: Michael Heap (<m@michaelheap.com>)
+#          Mark McKinstry
 #
 # Copyright (C) 2015 Michael Heap
 #
@@ -21,19 +22,36 @@ module Kitchen
   module Provisioner
     module Ansible
       class Os
-        class Amazon < Redhat
+        class Fedora < Os
           def install_command
             <<-INSTALL
 
             if [ ! $(which ansible) ]; then
-              #{install_epel_repo}
-              #{sudo_env('yum-config-manager')} --enable epel/x86_64
-              #{sudo_env('yum')} -y install #{ansible_package_name} git
-              #{sudo_env('alternatives')} --set python /usr/bin/python2.6
-              #{sudo_env('yum')} clean all
-              #{sudo_env('yum')} install yum-python26 -y
+            #{redhat_yum_repo}
+            #{update_packages_command}
+            #{sudo_env('dnf')} -y install #{ansible_package_name} libselinux-python git python2-dnf
             fi
             INSTALL
+          end
+
+          def update_packages_command
+            @config[:update_package_repos] ? "#{sudo_env('dnf')} makecache" : nil
+          end
+
+          def ansible_package_name
+            if @config[:ansible_version] == 'latest' || @config[:ansible_version] == nil
+              "ansible"
+            else
+              "ansible#{@config[:ansible_version][0..2]}-#{@config[:ansible_version]}"
+            end
+          end
+
+          def redhat_yum_repo
+            if @config[:ansible_yum_repo]
+              <<-INSTALL
+              #{sudo_env('rpm')} -ivh #{@config[:ansible_yum_repo]}
+              INSTALL
+            end
           end
         end
       end

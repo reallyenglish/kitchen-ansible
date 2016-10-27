@@ -31,5 +31,9 @@ EOF
   s.add_development_dependency 'rspec'
   s.add_development_dependency 'pry'
   s.add_development_dependency 'rake'
-  s.add_runtime_dependency 'librarian-ansible'
+  if RUBY_VERSION >= '2.0'
+    s.add_dependency 'net-ssh', '~> 3.0'
+  else
+    s.add_dependency 'net-ssh', '~> 2.9'
+  end
 end

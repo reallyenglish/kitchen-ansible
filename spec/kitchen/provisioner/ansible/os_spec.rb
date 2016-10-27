@@ -16,7 +16,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-require 'kitchen'
+require 'spec_helper'
+
 require 'kitchen/provisioner/ansible/os'
 
 include Kitchen::Ansible::TestHelpers
@@ -34,7 +35,7 @@ describe Kitchen::Provisioner::Ansible::Os do
       ['ubuntu', Kitchen::Provisioner::Ansible::Os::Debian],
       ['redhat', Kitchen::Provisioner::Ansible::Os::Redhat],
       ['centos', Kitchen::Provisioner::Ansible::Os::Redhat],
-      ['fedora', Kitchen::Provisioner::Ansible::Os::Redhat],
+      ['fedora', Kitchen::Provisioner::Ansible::Os::Fedora],
       ['amazon', Kitchen::Provisioner::Ansible::Os::Amazon],
       ['freebsd', Kitchen::Provisioner::Ansible::Os::Freebsd],
       ['suse', Kitchen::Provisioner::Ansible::Os::Suse]
